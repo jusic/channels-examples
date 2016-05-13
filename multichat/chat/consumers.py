@@ -1,11 +1,16 @@
 import json
 from channels import Channel
 from channels.auth import channel_session_user_from_http, channel_session_user
+from channels.sessions import enforce_ordering
 
 from .settings import MSG_TYPE_LEAVE, MSG_TYPE_ENTER, NOTIFY_USERS_ON_ENTER_OR_LEAVE_ROOMS
 from .models import Room
 from .utils import get_room_or_error, catch_client_error
 
+import time
+import logging
+
+logger = logging.getLogger("django")
 
 ### WebSocket handling ###
 
@@ -14,7 +19,12 @@ from .utils import get_room_or_error, catch_client_error
 # websocket.connect or http.request messages) to the channel session (available
 # in all consumers with the same reply_channel, so all three here)
 @channel_session_user_from_http
+@enforce_ordering(slight=True)
 def ws_connect(message):
+    if not message.user.is_authenticated():
+        logger.warning("non-authenticated user")
+    time.sleep(1) # imitate a processing delay
+    logger.info("connect with user %s" % message.user)
     # Initialise their session
     message.channel_session['rooms'] = []
 
@@ -23,7 +33,9 @@ def ws_connect(message):
 # of its own with a few attributes extra so we can route it
 # This doesn't need @channel_session_user as the next consumer will have that,
 # and we preserve message.reply_channel (which that's based on)
+@enforce_ordering(slight=True)
 def ws_receive(message):
+    logger.info("receive")
     # All WebSocket frames have either a text or binary payload; we decode the
     # text part here assuming it's JSON.
     # You could easily build up a basic framework that did this encoding/decoding
@@ -33,6 +45,7 @@ def ws_receive(message):
     Channel("chat.receive").send(payload)
 
 
+@enforce_ordering(slight=True)
 @channel_session_user
 def ws_disconnect(message):
     # Unsubscribe from any connected rooms
